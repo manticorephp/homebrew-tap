@@ -1,0 +1,33 @@
+# Points Formula/manticore.rb at the latest manticorephp/compiler release.
+# Runs in this repo with its own GITHUB_TOKEN: no cross-repo secret exists.
+name: bump
+on:
+  schedule:
+    - cron: "17 */6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Update the formula
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="$(gh release view -R manticorephp/compiler --json tagName -q .tagName)"
+          v="${tag#v}"
+          name="manticore-$v-macos-arm64.tar.gz"
+          gh release download "$tag" -R manticorephp/compiler -p SHA256SUMS -O sums
+          sum="$(sed -n "s|^\([0-9a-f]\{64\}\)  \./$name\$|\1|p" sums)"
+          rm -f sums
+          [ -n "$sum" ] || { echo "$tag has no $name"; exit 0; }
+          f=Formula/manticore.rb
+          sed -i -E "s|^(  url \").*(\")$|\1https://github.com/manticorephp/compiler/releases/download/$tag/$name\2|; s|^(  sha256 \")[0-9a-f]{64}(\")$|\1$sum\2|" "$f"
+          git diff --quiet && { echo "already at $v"; exit 0; }
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            commit -qam "manticore $v"
+          git push -q
